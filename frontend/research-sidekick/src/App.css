@@ -1,0 +1,101 @@
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.research-workspace {
+    height: 617px;
+    overflow: hidden;
+}
+
+.research-workspace-tabs {
+    flex: 0 0 auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.research-workspace-content {
+    position: relative;
+    overflow-y: auto;
+    overflow-x: hidden;
+    min-height: 0;
+}
+
+.preserve-lines {
+    white-space: pre-wrap;
+}
+
+.overflow-safe {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.report-preview {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.chat-messages {
+    min-height: 180px;
+}
+
+.session-item.active {
+    background-color: #e9ecef;
+}
+
+.mobile-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, .35);
+    z-index: 1040;
+}
+
+.mobile-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(85vw, 320px);
+    z-index: 1045;
+    box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .15);
+}
+
+@media (max-width: 991.98px) {
+    .research-workspace {
+        height: min(70vh, 650px);
+    }
+}

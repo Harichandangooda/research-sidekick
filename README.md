@@ -1,158 +1,164 @@
 # Research Paper Sidekick
 
-Research Paper Sidekick is a local research workflow application for discovering,
-analyzing, and planning experiments around academic papers. It combines a
-Streamlit interface with a FastAPI backend, an OpenAI Agents SDK coordinator,
-SQLite persistence, and paper retrieval through ChromaDB and
+Research Paper Sidekick is a local research workspace for discovering, analyzing,
+and planning experiments around academic papers. It combines a React and
+Bootstrap frontend with a FastAPI backend, an OpenAI Agents SDK coordinator,
+SQLite persistence, and semantic paper retrieval through ChromaDB and
 sentence-transformers.
 
-The project currently supports authenticated, user-isolated research sessions.
-It is suitable for local development and evaluation. It has not yet been
-hardened for public, multi-tenant production deployment.
+The application supports authenticated, user-isolated research sessions. It is
+intended for local development and evaluation and has not yet been hardened for
+public, multi-tenant production deployment.
 
 ## Features
 
-- Email and password registration and login
-- JWT bearer authentication
-- User-owned research sessions displayed as clickable sidebar conversations
+- React and Bootstrap user interface
+- Email/password registration and login with JWT bearer authentication
+- Authentication restoration on browser reload and clean expired-token handling
+- User-owned research sessions with create, select, rename, and delete controls
 - Automatic conversation titles derived from the first research prompt
-- Conversation rename and delete controls
-- Persistent chat history and generated reports
-- PDF upload, text extraction, and metadata storage
-- Local semantic indexing and retrieval for uploaded papers
-- Coordinator-driven research workflows using specialist agents:
-  - Paper discovery with web search
-  - Structured paper analysis
-  - Experiment and reproduction planning
-- Streamlit frontend backed exclusively by FastAPI endpoints
-- Persistent SQLite and ChromaDB storage
+- Persistent conversation history and generated reports
+- PDF validation, upload, text extraction, indexing, and active-paper selection
+- Research requests with or without a selected paper
+- Answer, Papers, Reports, and Chat workspace tabs
+- Responsive sidebar, loading indicators, empty states, and API error feedback
+- Coordinator workflows for paper discovery, paper analysis, and experiment planning
+- SQLite records and ChromaDB embeddings persisted locally
 
 ## Architecture
 
 ```text
-Streamlit frontend (app.py)
+React frontend (frontend/research-sidekick)
         |
-        | HTTP + JWT bearer token
+        | Axios + JWT bearer token
         v
 FastAPI backend (backend/main.py)
         |
         +-- Authentication and authorization
         +-- Session, paper, message, and report services
         +-- OpenAI Agents SDK coordinator
-        +-- RAG retrieval
+        +-- Retrieval-augmented generation
         |
         +-- SQLite: users and application records
-        +-- ChromaDB: persistent paper embeddings
+        +-- ChromaDB: paper chunks and embeddings
 ```
 
-The backend owns all business logic and persistence. The Streamlit application
-only manages presentation, browser session state, and API requests.
+The backend owns authentication, authorization, research execution, persistence,
+and retrieval logic. React manages presentation and browser state and communicates
+with FastAPI through a small Axios service layer.
+
+The root-level `app.py` is the earlier Streamlit client. It remains in the
+repository for reference, but the React application is the primary frontend.
 
 ## Requirements
 
 - Python 3.12
 - [uv](https://docs.astral.sh/uv/)
+- Node.js and npm
 - An OpenAI API key with access to the configured models and tools
 
-The first paper upload may take longer because the
-`sentence-transformers/all-MiniLM-L6-v2` model must be downloaded and loaded.
+The first paper upload can take longer because the
+`sentence-transformers/all-MiniLM-L6-v2` model may need to be downloaded and
+loaded.
 
-## Setup
+## Backend Setup
 
-1. Install the locked dependencies:
+1. Install the locked Python dependencies from the repository root:
 
    ```powershell
    uv sync
    ```
 
-2. Create a local `.env` file from `.env.example`:
+2. Create a local `.env` file and configure the required secrets:
 
-   ```powershell
-   Copy-Item .env.example .env
+   ```dotenv
+   JWT_SECRET_KEY=replace-with-a-long-random-secret
+   JWT_ALGORITHM=HS256
+   JWT_EXPIRE_MINUTES=1440
+   OPENAI_API_KEY=replace-with-your-openai-api-key
    ```
 
-3. Generate a JWT signing secret:
+   A signing secret can be generated with:
 
    ```powershell
    uv run python -c "import secrets; print(secrets.token_urlsafe(64))"
    ```
 
-4. Add the generated secret and your OpenAI API key to `.env`:
+Do not commit `.env`; it is excluded by `.gitignore`.
 
-   ```dotenv
-   JWT_SECRET_KEY=replace-with-the-generated-secret
-   JWT_ALGORITHM=HS256
-   JWT_EXPIRE_MINUTES=1440
-   OPENAI_API_KEY=replace-with-your-openai-api-key
-   ```
-   
-Do not commit `.env`. It is intentionally excluded by `.gitignore`.
+## Frontend Setup
+
+Install the React dependencies:
+
+```powershell
+cd frontend/research-sidekick
+npm install
+```
+
+The frontend uses `http://localhost:8000` by default. To use another FastAPI
+address, create `frontend/research-sidekick/.env.local`:
+
+```dotenv
+REACT_APP_API_BASE_URL=http://127.0.0.1:8000
+```
+
+Restart the React development server after changing this variable.
 
 ## Running Locally
 
-Start the backend from the repository root:
+Start FastAPI from the repository root:
 
 ```powershell
 uv run uvicorn backend.main:app --reload
 ```
 
-The API is available at `http://127.0.0.1:8000`. Useful development URLs:
+The backend is available at `http://127.0.0.1:8000`:
 
 - Health check: `http://127.0.0.1:8000/health`
-- Interactive API documentation: `http://127.0.0.1:8000/docs`
+- Interactive documentation: `http://127.0.0.1:8000/docs`
 - OpenAPI schema: `http://127.0.0.1:8000/openapi.json`
 
-In a second terminal, start the frontend:
+In a second terminal, start React:
 
 ```powershell
-uv run streamlit run app.py
+cd frontend/research-sidekick
+npm start
 ```
 
-Streamlit normally opens at `http://localhost:8501`.
-
-To use a backend at another address, set:
-
-```dotenv
-SIDEKICK_API_BASE_URL=http://127.0.0.1:8000
-```
+The application opens at `http://localhost:3000`. FastAPI CORS accepts both
+`localhost:3000` and `127.0.0.1:3000` for local development.
 
 ## Using the Application
 
-1. Register with an email address and a password of at least eight characters.
-2. Create a new conversation or select an existing one from the sidebar.
+1. Register with a valid email address and a password of at least eight characters.
+2. Create a conversation or select an existing conversation from the sidebar.
 3. Optionally upload a text-based PDF and select it as the active paper.
-4. Enter a research request or ask a follow-up question.
-5. Review the generated answer, chat history, indexed papers, and saved reports.
+4. Enter a research request and run Sidekick.
+5. Review the answer, continue the conversation, and inspect indexed papers and reports.
 
-New conversations initially use the title `New Research Session`. The first
-research prompt replaces that placeholder with a concise title, making sessions
-easy to distinguish in the sidebar. Use the pencil control beside a
-conversation to rename it manually. Use the delete control to remove it after
-confirmation.
+New conversations begin with the title `New Research Session`. The first prompt
+automatically replaces that placeholder with a concise title. Every successful
+coordinator response is saved as a report. Recent messages are supplied to the
+coordinator as conversation context, and a selected paper contributes its five
+most relevant indexed chunks.
 
-Every completed coordinator response is currently saved as a report. Recent
-messages from the selected session are supplied to the coordinator as context.
-When a paper is selected, the five most relevant indexed chunks are also added
-to the coordinator input.
+## Authentication and Authorization
 
-## Authentication
-
-`POST /auth/register` creates a user with a bcrypt password hash and returns a
-signed access token. `POST /auth/login` verifies the password and returns the
-same response shape. The Streamlit frontend stores the token in
-`st.session_state` and sends it on protected calls:
+Registration and login return an access token and authenticated user. React stores
+the token in browser local storage, and an Axios request interceptor adds it to
+protected requests:
 
 ```http
 Authorization: Bearer <access-token>
 ```
 
-The backend derives the user ID from the verified token. It does not accept a
-user ID from request bodies. Session ownership is checked before message,
-paper, chat, and report operations. A `401` response clears the frontend's
-local authentication state.
+On reload, React validates the stored token through `GET /auth/me`. A `401`
+response clears invalid or expired authentication state and returns the user to
+the authentication screen.
 
-Tokens expire after `JWT_EXPIRE_MINUTES`. Changing `JWT_SECRET_KEY` invalidates
-all existing tokens.
+FastAPI derives the user identity exclusively from the verified token. Session
+ownership is checked before session, message, paper, chat, and report operations;
+the frontend never sends a user ID to select protected data.
 
 ## API Overview
 
@@ -160,7 +166,7 @@ Public endpoints:
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
-| `GET` | `/health` | Backend health check |
+| `GET` | `/health` | Check backend health |
 | `POST` | `/auth/register` | Register and receive an access token |
 | `POST` | `/auth/login` | Log in and receive an access token |
 
@@ -168,14 +174,14 @@ Authenticated endpoints:
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
-| `GET` | `/auth/me` | Return the current user |
+| `GET` | `/auth/me` | Return the authenticated user |
 | `POST` | `/sessions` | Create a research session |
-| `GET` | `/sessions` | List the current user's sessions |
+| `GET` | `/sessions` | List the user's sessions |
 | `GET` | `/sessions/{session_id}` | Get an owned session |
 | `PATCH` | `/sessions/{session_id}` | Rename an owned session |
 | `DELETE` | `/sessions/{session_id}` | Delete an owned session and its contents |
-| `GET` | `/sessions/{session_id}/messages` | List session messages |
-| `POST` | `/sessions/{session_id}/chat` | Run the coordinator |
+| `GET` | `/sessions/{session_id}/messages` | List conversation messages |
+| `POST` | `/sessions/{session_id}/chat` | Run the research coordinator |
 | `POST` | `/sessions/{session_id}/papers` | Upload and index a PDF |
 | `GET` | `/sessions/{session_id}/papers` | List session papers |
 | `GET` | `/papers/{paper_id}` | Get owned paper metadata |
@@ -191,109 +197,72 @@ Example chat request:
 }
 ```
 
-`paper_id` is optional, but when provided it must belong to the requested
-session and authenticated user.
-
-Example session rename request:
-
-```json
-{
-  "title": "JEPA architecture comparison"
-}
-```
-
-Session titles must not be blank and may contain at most 80 characters.
-Surrounding whitespace is removed before the title is saved.
+`paper_id` may be `null`, but a supplied ID must belong to the requested session
+and authenticated user.
 
 ## Persistence
 
-Runtime data is stored locally:
-
-- `sidekick.db` contains users, sessions, messages, paper metadata and text,
-  and reports.
+- `sidekick.db` contains users, sessions, messages, paper metadata/text, and reports.
 - `chroma_db/` contains persistent paper chunks and embeddings.
 
-Both paths are excluded from Git. Deleting either path deletes the
-corresponding local state.
-
-Deleting a conversation through the application removes its messages, papers,
-and reports through SQLite cascading relationships. ChromaDB chunks belonging
-to its uploaded papers are also removed.
-
-Database tables are initialized during FastAPI startup. On an older database,
-the migration adds session ownership and assigns pre-authentication sessions
-to an internal `legacy@local` user. Those sessions are preserved, but they are
-not automatically transferred to a newly registered account. Reassigning
-legacy data currently requires a deliberate database migration.
+Both paths are excluded from Git. Deleting a conversation through the application
+removes its relational records through SQLite cascading relationships and removes
+the corresponding ChromaDB index.
 
 ## Project Structure
 
 ```text
 .
-|-- app.py                         # Streamlit frontend and API client
+|-- app.py                              # Legacy Streamlit client
 |-- backend/
-|   |-- main.py                    # FastAPI application and routes
-|   |-- auth.py                    # Password hashing and JWT dependency
-|   |-- agents/
-|   |   |-- sidekick.py            # Coordinator
-|   |   `-- tools.py               # Specialist agents
-|   |-- schemas/
-|   |   |-- request_models.py      # Pydantic request models
-|   |   `-- response_models.py     # Pydantic response models
-|   |-- services/
-|   |   |-- auth_service.py
-|   |   |-- document_parser.py
-|   |   |-- paper_service.py
-|   |   |-- rag_service.py
-|   |   |-- report_service.py
-|   |   |-- session_service.py
-|   |   `-- sidekick_service.py
-|   `-- storage/
-|       |-- rag_store.py            # ChromaDB and embedding model
-|       `-- session_store.py        # SQLite schema and queries
-|-- .env.example
+|   |-- main.py                         # FastAPI routes and application
+|   |-- auth.py                         # Password hashing and JWT dependency
+|   |-- agents/                         # Coordinator and specialist agents
+|   |-- schemas/                        # Pydantic request/response models
+|   |-- services/                       # Application service layer
+|   `-- storage/                        # SQLite and ChromaDB access
+|-- frontend/research-sidekick/
+|   |-- public/
+|   |-- src/
+|   |   |-- api.js                      # Axios client and interceptors
+|   |   |-- services/                   # Frontend API service functions
+|   |   |-- pages/                      # Authentication and workspace pages
+|   |   `-- App.js                      # Authentication lifecycle
+|   |-- package.json
+|   `-- package-lock.json
 |-- pyproject.toml
 `-- uv.lock
 ```
 
-## Current Limitations
-
-- Authentication uses access tokens only. There are no refresh tokens, OAuth
-  providers, password reset flow, email verification, roles, or account
-  management endpoints.
-- The JWT signing secret is shared application configuration. Secret rotation
-  and token revocation are not implemented.
-- CORS is configured only for local Streamlit addresses on port `8501`.
-- SQLite is appropriate for local use and light concurrency, not a high-write
-  distributed deployment.
-- Agent execution is synchronous and can occupy a backend worker for the
-  duration of an OpenAI request.
-- Uploaded PDFs are read into memory, and no explicit upload-size limit is
-  enforced by the application.
-- PDF extraction uses `pypdf`; scanned or image-only papers require OCR, which
-  is not implemented.
-- RAG uses fixed character-based chunks and a fixed local embedding model.
-- Reports are saved for every successful coordinator response rather than
-  being classified by response type.
-- OpenAI model and web-search usage can incur API charges.
-- Automated tests and production deployment configuration are not yet
-  included.
-
 ## Development Checks
 
-Compile the application:
+Run the React tests and production build:
 
 ```powershell
-uv run python -m compileall -q app.py backend
+cd frontend/research-sidekick
+npm test -- --watchAll=false
+npm run build
 ```
 
-Confirm that the lockfile matches `pyproject.toml`:
+Validate the Python source and dependency lockfile from the repository root:
 
 ```powershell
+uv run python -m compileall -q backend
 uv lock --check
 ```
 
-Before exposing the application beyond local development, add automated tests,
-request-size limits, structured logging, rate limiting, secure HTTPS
-termination, production CORS configuration, and a deliberate database backup
-and migration process.
+## Current Limitations
+
+- Authentication uses access tokens only; refresh tokens, OAuth, password reset,
+  email verification, roles, and account management are not implemented.
+- SQLite is intended for local use and light concurrency.
+- Agent execution is synchronous and can occupy a backend worker for the duration
+  of an OpenAI request.
+- Uploaded PDFs are read into memory and do not have an explicit application-level
+  size limit.
+- Scanned or image-only PDFs require OCR, which is not implemented.
+- Reports are saved for every successful coordinator response.
+- Paper and report deletion endpoints are not currently available.
+- OpenAI model and web-search usage can incur API charges.
+- Production deployment, rate limiting, structured logging, HTTPS termination,
+  backup automation, and a formal migration workflow are not yet configured.
