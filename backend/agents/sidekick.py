@@ -15,5 +15,12 @@ coordinator_agent = Agent(
 
 
 def run_analysis(user_input: str):
-    return Runner.run_sync(coordinator_agent, user_input)
+    # Acquisition is handled explicitly before analysis; the coordinator cannot
+    # accidentally search when the user only supplied files.
+    agent = coordinator_agent.clone(
+        instructions=COORDINATOR_INSTRUCTION.replace("Use the Search Agent to discover relevant papers, ", "Use ")
+        + "\nDiscovery is handled before this call. Use provided paper context. For discovered papers, distinguish summary-based observations from claims requiring full-text evidence.",
+        tools=[tool for tool in get_tools() if tool.name != "search_agent"],
+    )
+    return Runner.run_sync(agent, user_input)
 

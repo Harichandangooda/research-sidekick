@@ -162,6 +162,7 @@ def initialize_state() -> None:
     st.session_state.setdefault("selected_paper_id", None)
     st.session_state.setdefault("selected_report_id", None)
     st.session_state.setdefault("prompt", "")
+    st.session_state.setdefault("upload_attempted", False)
     st.session_state.setdefault("last_response", None)
     st.session_state.setdefault("editing_session_id", None)
     st.session_state.setdefault("deleting_session_id", None)
@@ -220,6 +221,7 @@ def get_current_user() -> dict[str, Any]:
 
 
 def apply_auth(auth_response: dict[str, Any]) -> None:
+    st.session_state.upload_attempted = False
     st.session_state.access_token = auth_response["access_token"]
     st.session_state.user = auth_response["user"]
     st.session_state.session_id = None
@@ -272,7 +274,7 @@ def upload_paper(session_id: str, uploaded_file: Any) -> dict[str, Any]:
 
 
 def run_sidekick(session_id: str, prompt: str, paper_id: int | None) -> dict[str, Any]:
-    payload = {"prompt": prompt, "paper_id": paper_id}
+    payload = {"prompt": prompt, "paper_id": paper_id, "upload_attempted": st.session_state.upload_attempted}
     return api_request("POST", f"/sessions/{session_id}/chat", json=payload)
 
 
@@ -304,6 +306,7 @@ def set_prompt(prompt: str) -> None:
 
 
 def activate_session(session_id: str) -> None:
+    st.session_state.upload_attempted = False
     st.session_state.session_id = session_id
     st.session_state.selected_paper_id = None
     st.session_state.selected_report_id = None
@@ -547,27 +550,29 @@ def render_input_card() -> None:
         """,
         unsafe_allow_html=True,
     )
-    uploaded_file = st.file_uploader(
+    uploaded_files = st.file_uploader(
         "Drag & drop a PDF here",
         type=["pdf"],
-        accept_multiple_files=False,
+        accept_multiple_files=True,
         label_visibility="collapsed",
     )
 
-    if uploaded_file is not None and st.button("Upload and Index PDF", use_container_width=True):
-        try:
-            with st.spinner("Parsing and indexing paper..."):
-                uploaded = upload_paper(st.session_state.session_id, uploaded_file)
-            st.session_state.selected_paper_id = uploaded["paper_id"]
-            st.success(f"Indexed {uploaded['chunk_count']} chunks for retrieval.")
-            render_uploaded_file(uploaded["file_name"], uploaded["file_size"])
-        except RuntimeError as exc:
-            st.error(f"Could not upload this PDF: {exc}")
+    if uploaded_files and st.button("Upload and Index PDFs", use_container_width=True):
+        st.session_state.upload_attempted = True
+        for uploaded_file in uploaded_files:
+            try:
+                with st.spinner(f"Parsing and indexing {uploaded_file.name}..."):
+                    uploaded = upload_paper(st.session_state.session_id, uploaded_file)
+                st.session_state.selected_paper_id = None
+                st.success(f"{uploaded_file.name}: indexed {uploaded['chunk_count']} chunks.")
+                render_uploaded_file(uploaded["file_name"], uploaded["file_size"])
+            except RuntimeError as exc:
+                st.error(f"{uploaded_file.name}: {exc}")
 
     run_clicked = st.button("Run Sidekick", type="primary", use_container_width=True)
     if run_clicked:
-        if not prompt.strip():
-            st.warning("Enter a research request first.")
+        if not prompt.strip() and not list_papers(st.session_state.session_id):
+            st.warning("Please enter a prompt or upload at least one file.")
             return
         try:
             with st.spinner("Running coordinator..."):

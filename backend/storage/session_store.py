@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import json
 from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
@@ -106,6 +107,16 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS chat_requests (
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                request_id TEXT NOT NULL,
+                fingerprint TEXT NOT NULL,
+                response TEXT NOT NULL,
+                report_id INTEGER NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+                PRIMARY KEY (session_id, request_id)
+            )
+        """)
 
 
 def ensure_legacy_user(conn: sqlite3.Connection) -> int:
@@ -345,27 +356,74 @@ def get_papers(session_id: str) -> list[dict[str, Any]]:
     with closing(get_connection()) as conn:
         rows = conn.execute(
             """
-            SELECT id, session_id, file_name, file_size, source, created_at
+            SELECT id, session_id, file_name, file_size, source, created_at,
+                   CASE WHEN source = 'online_discovery' THEN raw_text END AS discovery_json
             FROM papers
             WHERE session_id = ?
             ORDER BY created_at DESC
             """,
             (session_id,),
         ).fetchall()
-    return [dict(row) for row in rows]
+    return [paper_metadata(row) for row in rows]
+
+
+def paper_metadata(row: sqlite3.Row) -> dict[str, Any]:
+    paper = dict(row)
+    text = paper.pop("discovery_json", None)
+    if text:
+        try:
+            metadata = json.loads(text)
+            if isinstance(metadata, dict):
+                for key in ("title", "authors", "year", "summary", "url", "relevance", "relevance_reason"):
+                    if key in metadata:
+                        paper[key] = metadata[key]
+        except (ValueError, TypeError):
+            pass
+    return paper
+
+
+def save_discovered_paper(session_id: str, metadata: dict[str, Any]) -> int:
+    """Reuse paper URLs within a session, including records from older versions."""
+    text = json.dumps(metadata)
+    with closing(get_connection()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        rows = conn.execute(
+            "SELECT id, raw_text FROM papers WHERE session_id = ? AND source = 'online_discovery'",
+            (session_id,),
+        ).fetchall()
+        for row in rows:
+            try:
+                existing = json.loads(row["raw_text"])
+            except (ValueError, TypeError):
+                continue
+            if isinstance(existing, dict) and existing.get("url") == metadata["url"]:
+                conn.execute("UPDATE papers SET file_name = ?, file_size = ?, raw_text = ? WHERE id = ?",
+                             (metadata["title"], len(text.encode()), text, row["id"]))
+                return int(row["id"])
+        cursor = conn.execute(
+            "INSERT INTO papers(session_id, file_name, file_size, raw_text, source, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, metadata["title"], len(text.encode()), text, "online_discovery", utc_now()),
+        )
+        return int(cursor.lastrowid)
+
+
+def delete_paper(paper_id: int) -> None:
+    with closing(get_connection()) as conn, conn:
+        conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
 
 
 def get_paper(paper_id: int) -> dict[str, Any] | None:
     with closing(get_connection()) as conn:
         row = conn.execute(
             """
-            SELECT papers.id, papers.session_id, papers.file_name, papers.file_size, papers.source, papers.created_at
+            SELECT papers.id, papers.session_id, papers.file_name, papers.file_size, papers.source, papers.created_at,
+                   CASE WHEN papers.source = 'online_discovery' THEN papers.raw_text END AS discovery_json
             FROM papers
             WHERE papers.id = ?
             """,
             (paper_id,),
         ).fetchone()
-    return dict(row) if row else None
+    return paper_metadata(row) if row else None
 
 
 def get_paper_text(paper_id: int) -> str | None:
@@ -424,14 +482,53 @@ def get_paper_for_user(paper_id: int, user_id: int) -> dict[str, Any] | None:
     with closing(get_connection()) as conn:
         row = conn.execute(
             """
-            SELECT papers.id, papers.session_id, papers.file_name, papers.file_size, papers.source, papers.created_at
+            SELECT papers.id, papers.session_id, papers.file_name, papers.file_size, papers.source, papers.created_at,
+                   CASE WHEN papers.source = 'online_discovery' THEN papers.raw_text END AS discovery_json
             FROM papers
             JOIN sessions ON sessions.id = papers.session_id
             WHERE papers.id = ? AND sessions.user_id = ?
             """,
             (paper_id, user_id),
         ).fetchone()
-    return dict(row) if row else None
+    return paper_metadata(row) if row else None
+
+
+def get_chat_request(session_id: str, request_id: str, fingerprint: str) -> dict | None:
+    with closing(get_connection()) as conn:
+        row = conn.execute("SELECT * FROM chat_requests WHERE session_id = ? AND request_id = ?",
+                           (session_id, request_id)).fetchone()
+    if row is None:
+        return None
+    if row["fingerprint"] != fingerprint:
+        raise ValueError("This request ID was already used for different input")
+    return {"response": row["response"], "report_id": row["report_id"]}
+
+
+def save_chat_result(session_id: str, prompt: str, response: str, title: str,
+                     request_id: str | None, fingerprint: str) -> dict:
+    """Commit a completed turn, its report, and retry record together."""
+    with closing(get_connection()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if request_id:
+            row = conn.execute("SELECT * FROM chat_requests WHERE session_id = ? AND request_id = ?",
+                               (session_id, request_id)).fetchone()
+            if row:
+                if row["fingerprint"] != fingerprint:
+                    raise ValueError("This request ID was already used for different input")
+                return {"response": row["response"], "report_id": row["report_id"]}
+        conn.execute("""UPDATE sessions SET title = ? WHERE id = ? AND title = 'New Research Session'
+                        AND NOT EXISTS (SELECT 1 FROM messages WHERE session_id = ?)""",
+                     (title, session_id, session_id))
+        created_at = utc_now()
+        conn.executemany("INSERT INTO messages(session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+                         [(session_id, "user", prompt, created_at), (session_id, "assistant", response, created_at)])
+        cursor = conn.execute("INSERT INTO reports(session_id, title, content, created_at) VALUES (?, ?, ?, ?)",
+                              (session_id, prompt[:80], response, created_at))
+        report_id = int(cursor.lastrowid)
+        if request_id:
+            conn.execute("INSERT INTO chat_requests VALUES (?, ?, ?, ?, ?)",
+                         (session_id, request_id, fingerprint, response, report_id))
+    return {"response": response, "report_id": report_id}
 
 
 def get_report_for_user(report_id: int, user_id: int) -> dict[str, Any] | None:

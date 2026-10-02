@@ -132,8 +132,8 @@ The application opens at `http://localhost:3000`. FastAPI CORS accepts both
 
 1. Register with a valid email address and a password of at least eight characters.
 2. Create a conversation or select an existing conversation from the sidebar.
-3. Optionally upload a text-based PDF and select it as the active paper.
-4. Enter a research request and run Sidekick.
+3. Optionally upload one or more text-based PDFs and select an active paper.
+4. Enter a research request or upload files, then run Sidekick.
 5. Review the answer, continue the conversation, and inspect indexed papers and reports.
 
 New conversations begin with the title `New Research Session`. The first prompt
@@ -141,6 +141,47 @@ automatically replaces that placeholder with a concise title. Every successful
 coordinator response is saved as a report. Recent messages are supplied to the
 coordinator as conversation context, and a selected paper contributes its five
 most relevant indexed chunks.
+
+After uploading, the active-paper control defaults to `All session papers`, so
+retrieval can search every successfully indexed upload in the session. It ranks
+chunks across those papers and supplies up to five chunks total, without forcing
+every paper into model context. Selecting a specific paper
+limits the request to that paper; explicitly requested discovery adds its new
+results as well. Selected or newly discovered online papers use their saved metadata and summaries, with a
+clear indication that their full text has not been retrieved. The Papers tab
+shows their authors, year, source link, relevance score, and summary. Discovery
+reuses existing records with the same URL within a session.
+
+Follow-up Chat accepts zero, one, or multiple new PDFs through `Add papers to this
+follow-up`. Files use the existing validation and indexing pipeline and are added
+to the current session as soon as they are selected. Sending is disabled while
+uploads are processing, and the question draft stays open. Existing papers remain
+available: uploading C to a session containing A and B leaves A, B, and C available
+for retrieval. Failed files are excluded and reported by filename; those errors
+remain visible after sending. Uploading alone neither runs the coordinator nor
+changes existing plans or reports. Each successful follow-up creates a new report.
+
+Changing conversations discards late UI updates from pending uploads and chat
+requests. A request already running on the backend may still finish and save its
+result in the original conversation.
+
+Step 1 searches online when a prompt is supplied without uploaded papers. The
+existing search agent returns structured candidates, which are ranked by prompt
+relevance; up to five distinct results are saved in the session with source
+`online_discovery`. Their metadata, summaries, URLs, and scores are retained in
+SQLite; discovery does not download their full PDFs.
+
+Uploaded PDFs are all processed and indexed independently, without relevance
+filtering. With uploaded papers, online discovery is disabled unless the prompt
+explicitly requests it (for example, "Find related papers" or "Include external
+research"). Comparisons alone do not enable search. Whitespace-only prompts count
+as empty: files alone return an ingestion confirmation, while empty input shows
+"Please enter a prompt or upload at least one file."
+
+Each failed upload is reported by filename; successful uploads remain available.
+Failed indexing removes the paper record and attempts to clean its index. Clients
+can send `upload_attempted: true` on chat requests to prevent a failed upload batch
+from being mistaken for a prompt-only online discovery request.
 
 ## Authentication and Authorization
 
@@ -200,6 +241,28 @@ Example chat request:
 `paper_id` may be `null`, but a supplied ID must belong to the requested session
 and authenticated user.
 
+Chat requests also accept an optional UUID `request_id`. Repeating the same ID
+and input returns the saved response and report without adding another turn.
+Reusing an ID with different input returns `400`. React retains the ID for retries
+of a failed request while the workspace remains open. Successful chat turns,
+reports, automatic titles, and retry records are saved in one SQLite transaction;
+failed analysis does not save a partial conversation. Discovery metadata may
+remain after an analysis failure and is reused by subsequent discovery calls.
+
+Turns in the same session are serialized within a single backend process. The
+database prevents duplicate saved turns for a request ID across processes, but
+multiple workers can still perform duplicate model calls before either saves.
+Use the documented single-worker local setup for execution deduplication.
+
+Processing limits are defined in `backend/limits.py`: 20 MB per PDF, 500 pages,
+2,000,000 extracted characters, and 10,000 characters per prompt. Oversized uploads
+return `413`; oversized prompts return `422`. The coordinator input is capped at
+60,000 characters, with at most 12,000 characters of recent history and the
+remaining paper-context budget shared across papers. Truncated context is marked.
+PDF parsing and embedding run in a worker thread so they do not block the async
+server event loop. A deployment proxy should also limit multipart request bodies
+before the framework spools uploaded files.
+
 ## Persistence
 
 - `sidekick.db` contains users, sessions, messages, paper metadata/text, and reports.
@@ -236,6 +299,16 @@ the corresponding ChromaDB index.
 
 ## Development Checks
 
+Run deterministic backend tests (temporary SQLite database; search, embeddings,
+and analysis calls are mocked). These cover discovery, ownership, upload limits,
+context budgets, atomic rollback, sequential/concurrent retries, and follow-up
+paper accumulation. Session retrieval is also checked against an in-memory
+Chroma collection with deterministic embeddings:
+
+```powershell
+uv run python -m unittest discover -s tests -v
+```
+
 Run the React tests and production build:
 
 ```powershell
@@ -258,8 +331,8 @@ uv lock --check
 - SQLite is intended for local use and light concurrency.
 - Agent execution is synchronous and can occupy a backend worker for the duration
   of an OpenAI request.
-- Uploaded PDFs are read into memory and do not have an explicit application-level
-  size limit.
+- Accepted PDF bytes are read into memory up to the application limit; multipart
+  parsing may spool larger requests before the route rejects them.
 - Scanned or image-only PDFs require OCR, which is not implemented.
 - Reports are saved for every successful coordinator response.
 - Paper and report deletion endpoints are not currently available.

@@ -82,5 +82,27 @@ def retrieve_chunks(paper_id: int, query: str, top_k: int = 5) -> list[str]:
     return results.get("documents", [[]])[0]
 
 
+def retrieve_session_chunks(session_id: str, query: str, paper_ids: list[int], top_k: int = 5) -> list[dict]:
+    """Rank chunks together across the session's successfully ingested papers."""
+    if not paper_ids:
+        return []
+    query_embedding = get_embedding_model().encode(query).tolist()
+    results = get_collection().query(
+        query_embeddings=[query_embedding],
+        n_results=top_k,
+        where={"$and": [{"session_id": session_id}, {"paper_id": {"$in": paper_ids}}]},
+        include=["documents", "metadatas"],
+    )
+    documents = (results.get("documents") or [[]])[0]
+    metadatas = (results.get("metadatas") or [[]])[0]
+    return [{"paper_id": metadata["paper_id"], "text": document}
+            for document, metadata in zip(documents, metadatas)
+            if document and metadata and "paper_id" in metadata]
+
+
 def delete_session_chunks(session_id: str) -> None:
     get_collection().delete(where={"session_id": session_id})
+
+
+def delete_paper_chunks(paper_id: int) -> None:
+    get_collection().delete(where={"paper_id": paper_id})

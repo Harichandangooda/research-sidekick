@@ -6,8 +6,10 @@ from typing import Annotated
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 
 from backend.auth import get_current_user
+from backend.limits import MAX_UPLOAD_BYTES
 from backend.schemas.request_models import AuthRequest, ChatRequest, SessionUpdateRequest
 from backend.schemas.response_models import (
     AuthResponse,
@@ -120,22 +122,34 @@ def chat(session_id: str, request: ChatRequest, current_user: CurrentUser) -> di
         if paper is None or paper["session_id"] != session_id:
             raise HTTPException(status_code=404, detail="Paper not found for this session")
     try:
-        return sidekick_service.run_chat(session_id, request.prompt, request.paper_id)
+        return sidekick_service.run_chat(session_id, request.prompt, request.paper_id, request.upload_attempted,
+                                         str(request.request_id) if request.request_id else None)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Sidekick run failed: {exc}") from exc
 
 
 @app.post("/sessions/{session_id}/papers", response_model=PaperUploadResponse)
 async def upload_paper(session_id: str, current_user: CurrentUser, file: UploadFile = File(...)) -> dict:
-    ensure_session(session_id, current_user["id"])
+    await run_in_threadpool(ensure_session, session_id, current_user["id"])
     is_pdf = (file.filename or "").lower().endswith(".pdf")
     if file.content_type not in {"application/pdf", "application/x-pdf"} and not is_pdf:
         raise HTTPException(status_code=400, detail="Only PDF uploads are supported")
     try:
-        file_bytes = await file.read()
-        return paper_service.save_uploaded_pdf(session_id, file.filename or "uploaded.pdf", file_bytes)
+        file_bytes = await file.read(MAX_UPLOAD_BYTES + 1)
+        if len(file_bytes) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="PDF uploads must be 20 MB or smaller")
+        return await run_in_threadpool(paper_service.save_uploaded_pdf, session_id,
+                                       file.filename or "uploaded.pdf", file_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"PDF upload failed: {exc}") from exc
+    finally:
+        await file.close()
 
 
 @app.get("/sessions/{session_id}/papers", response_model=list[PaperResponse])

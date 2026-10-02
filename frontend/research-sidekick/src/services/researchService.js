@@ -5,7 +5,7 @@ export const createSession = () => api.post("/sessions").then(({ data }) => data
 export const renameSession = (sessionId, title) => api.patch(`/sessions/${sessionId}`, { title }).then(({ data }) => data);
 export const deleteSession = (sessionId) => api.delete(`/sessions/${sessionId}`);
 export const listMessages = (sessionId) => api.get(`/sessions/${sessionId}/messages`).then(({ data }) => data);
-export const sendChat = (sessionId, prompt, paperId = null) => api.post(`/sessions/${sessionId}/chat`, { prompt, paper_id: paperId }).then(({ data }) => data);
+export const sendChat = (sessionId, prompt, paperId = null, uploadAttempted = false, requestId = null) => api.post(`/sessions/${sessionId}/chat`, { prompt, paper_id: paperId, upload_attempted: uploadAttempted, request_id: requestId }).then(({ data }) => data);
 export const listPapers = (sessionId) => api.get(`/sessions/${sessionId}/papers`).then(({ data }) => data);
 export const uploadPaper = (sessionId, file) => {
     const formData = new FormData();

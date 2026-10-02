@@ -13,3 +13,7 @@ def delete_session_index(session_id: str) -> None:
 
 def retrieve_relevant_chunks(paper_id: int, query: str, top_k: int = 5) -> list[str]:
     return rag_store.retrieve_chunks(paper_id, query, top_k)
+
+
+def retrieve_relevant_session_chunks(session_id: str, query: str, paper_ids: list[int], top_k: int = 5) -> list[dict]:
+    return rag_store.retrieve_session_chunks(session_id, query, paper_ids, top_k)

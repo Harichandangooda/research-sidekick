@@ -27,6 +27,13 @@ class PaperResponse(BaseModel):
     source: str
     created_at: str
     chunk_count: int | None = None
+    title: str | None = None
+    authors: str | None = None
+    year: int | None = None
+    summary: str | None = None
+    url: str | None = None
+    relevance: float | None = None
+    relevance_reason: str | None = None
 
 
 class PaperUploadResponse(BaseModel):

@@ -95,7 +95,11 @@ def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
     payload = decode_access_token(credentials.credentials)
-    user = session_store.get_user_by_id(int(payload["sub"]))
+    try:
+        user_id = int(payload["sub"])
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=401, detail="Invalid token") from exc
+    user = session_store.get_user_by_id(user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user

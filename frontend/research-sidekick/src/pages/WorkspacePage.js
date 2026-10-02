@@ -22,6 +22,6 @@ function WorkspacePage({ user, onLogout }) {
   async function handleCreate() { setError(""); try { const item = await createSession(); await refreshSessions(item.id); } catch (e) { setError(getApiError(e, "Could not create a conversation.")); } }
   async function handleRename(id, title) { setError(""); try { const item = await renameSession(id, title); setSessions((all) => all.map((x) => x.id === id ? item : x)); } catch (e) { setError(getApiError(e, "Could not rename the conversation.")); } }
   async function handleDelete(id) { setError(""); try { await deleteSession(id); await refreshSessions(); } catch (e) { setError(getApiError(e, "Could not delete the conversation.")); } }
-  return <div className="row g-0 min-vh-100"><Sidebar sessions={sessions} activeSessionId={activeSessionId} onSelect={setActiveSessionId} onCreate={handleCreate} onRename={handleRename} onDelete={handleDelete} user={user} onLogout={onLogout} isLoading={isLoading}/><MainWorkspace activeSessionId={activeSessionId} onSessionChanged={() => refreshSessions(activeSessionId)} sessionError={error}/></div>;
+  return <div className="row g-0 min-vh-100"><Sidebar sessions={sessions} activeSessionId={activeSessionId} onSelect={setActiveSessionId} onCreate={handleCreate} onRename={handleRename} onDelete={handleDelete} user={user} onLogout={onLogout} isLoading={isLoading}/><MainWorkspace key={activeSessionId} activeSessionId={activeSessionId} onSessionChanged={() => refreshSessions()} sessionError={error}/></div>;
 }
 export default WorkspacePage;

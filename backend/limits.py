@@ -1,0 +1,7 @@
+"""Application limits shared by request validation and processing."""
+
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_PDF_PAGES = 500
+MAX_PAPER_CHARACTERS = 2_000_000
+MAX_PROMPT_CHARACTERS = 10_000
+MAX_AGENT_INPUT_CHARACTERS = 60_000
