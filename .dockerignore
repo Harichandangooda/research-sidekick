@@ -1,0 +1,14 @@
+.git
+.venv
+**/node_modules
+**/build
+**/__pycache__
+**/.env*
+*.db
+chroma_db
+papers
+helm
+k8s
+tests
+deployment
+*.tgz

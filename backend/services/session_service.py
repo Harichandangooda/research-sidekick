@@ -25,7 +25,8 @@ def rename_research_session(session_id: str, user_id: int, title: str) -> dict |
 def delete_research_session(session_id: str, user_id: int) -> bool:
     if session_store.get_session(session_id, user_id) is None:
         return False
-    delete_session_index(session_id)
+    if any(paper["source"] == "uploaded_pdf" for paper in session_store.get_papers(session_id)):
+        delete_session_index(session_id)
     return session_store.delete_session(session_id, user_id)
 
 

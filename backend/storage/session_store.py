@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import os
 import json
 from contextlib import closing
 from datetime import UTC, datetime
@@ -16,6 +17,9 @@ def utc_now() -> str:
 
 
 def get_connection() -> sqlite3.Connection:
+    if os.getenv("MYSQL_HOST"):
+        from backend.storage.mysql_store import Connection
+        return Connection()
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -23,6 +27,10 @@ def get_connection() -> sqlite3.Connection:
 
 
 def init_db() -> None:
+    if os.getenv("MYSQL_HOST"):
+        from backend.storage.mysql_store import init_db as init_mysql
+        init_mysql()
+        return
     with closing(get_connection()) as conn, conn:
         conn.execute(
             """

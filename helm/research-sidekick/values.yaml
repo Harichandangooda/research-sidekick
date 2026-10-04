@@ -1,0 +1,50 @@
+frontend:
+  # Ports below are Service ports; container listening ports stay fixed.
+  image:
+    repository: research-sidekick-frontend
+    tag: "0.1.0"
+  replicas: 1
+  port: 80
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 128Mi
+backend:
+  image:
+    repository: research-sidekick-backend
+    tag: "0.1.0"
+  replicas: 1
+  port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+mysql:
+  image:
+    repository: mysql
+    tag: "8.4.11"
+  port: 3306
+  storage: 2Gi
+chromadb:
+  image:
+    repository: chromadb/chroma
+    tag: "1.5.9"
+  port: 8000
+  storage: 2Gi
+ingress:
+  className: nginx
+  host: research-sidekick.local
+  # Regex captures preserve paths while stripping the external API prefix.
+  apiPath: /api(/|$)(.*)
+  frontendPath: /()(.*)
+config:
+  mysqlDatabase: research_sidekick
+  apiRootPath: /api
+  jwtAlgorithm: HS256
+  jwtExpireMinutes: "1440"

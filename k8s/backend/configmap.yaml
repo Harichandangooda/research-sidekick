@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: research-sidekick
+data:
+  MYSQL_HOST: mysql-service
+  MYSQL_PORT: "3306"
+  MYSQL_DATABASE: research_sidekick
+  CHROMA_HOST: chroma-service
+  CHROMA_PORT: "8000"
+  API_ROOT_PATH: /api
+  JWT_ALGORITHM: HS256
+  JWT_EXPIRE_MINUTES: "1440"

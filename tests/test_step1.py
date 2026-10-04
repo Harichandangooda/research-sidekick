@@ -365,7 +365,7 @@ class StepOneTests(unittest.TestCase):
         self.index.side_effect = RuntimeError("index failed")
         failure = self.upload("failed.pdf")
         self.assertEqual(failure.status_code, 500)
-        self.assertIn("index failed", failure.json()["detail"])
+        self.assertEqual("PDF upload could not be completed", failure.json()["detail"])
         self.cleanup_index.assert_called_once()
         self.assertEqual({paper["file_name"] for paper in self.papers()}, {"A.pdf", "B.pdf"})
         self.assertEqual(self.analysis.call_count, 1)
@@ -399,6 +399,36 @@ class StepOneTests(unittest.TestCase):
         self.assertEqual(self.chat("Explain the evidence").status_code, 200)
         self.assertNotIn("Uploaded Paper:", self.analysis.call_args.args[0])
         self.assertEqual(len(self.papers()), 2)
+
+
+    def test_unexpected_chat_error_is_logged_but_not_exposed(self):
+        self.analysis.side_effect = RuntimeError("sensitive internal connection detail")
+        with self.assertLogs("backend.main", level="ERROR") as logs:
+            response = self.chat("Research a topic")
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json()["detail"], "Sidekick could not complete the request")
+        self.assertNotIn("sensitive internal", response.text)
+        self.assertIn("sensitive internal", "\n".join(logs.output))
+
+    def test_empty_and_online_only_sessions_can_be_deleted_without_chroma(self):
+        owner_id = self.client.get("/auth/me", headers=self.headers).json()["id"]
+        with patch("backend.services.session_service.delete_session_index", side_effect=RuntimeError("Chroma unavailable")) as delete_index:
+            for online in (False, True):
+                identifier = self.client.post("/sessions", headers=self.headers).json()["id"]
+                if online:
+                    session_store.save_discovered_paper(identifier, {"title": "Online", "url": "https://example.com/paper"})
+                response = self.client.delete(f"/sessions/{identifier}", headers=self.headers)
+                self.assertEqual(response.status_code, 204)
+                self.assertIsNone(session_store.get_session(identifier, owner_id))
+            delete_index.assert_not_called()
+
+    def test_uploaded_session_deletion_still_cleans_chroma_and_relational_data(self):
+        self.upload()
+        with patch("backend.services.session_service.delete_session_index") as delete_index:
+            response = self.client.delete(self.base, headers=self.headers)
+        self.assertEqual(response.status_code, 204)
+        delete_index.assert_called_once_with(self.session)
+        self.assertEqual(session_store.get_papers(self.session), [])
 
 
 if __name__ == "__main__":

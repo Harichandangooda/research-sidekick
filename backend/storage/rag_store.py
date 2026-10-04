@@ -1,28 +1,43 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from pathlib import Path
-from typing import Any
+import os
+from threading import Lock
+from typing import Any, TYPE_CHECKING
 
 import chromadb
-from sentence_transformers import SentenceTransformer
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-CHROMA_DIR = PROJECT_ROOT / "chroma_db"
 COLLECTION_NAME = "paper_chunks"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+_embedding_model_lock = Lock()
+
+
+@lru_cache(maxsize=1)
+def get_client():
+    return chromadb.HttpClient(
+        host=os.getenv("CHROMA_HOST", "localhost"),
+        port=int(os.getenv("CHROMA_PORT", "8001")),
+    )
 
 
 @lru_cache(maxsize=1)
 def get_collection():
-    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
-    client = chromadb.PersistentClient(path=str(CHROMA_DIR))
-    return client.get_or_create_collection(name=COLLECTION_NAME)
+    return get_client().get_or_create_collection(name=COLLECTION_NAME)
 
 
 @lru_cache(maxsize=1)
-def get_embedding_model() -> SentenceTransformer:
+def _load_embedding_model() -> SentenceTransformer:
+    from sentence_transformers import SentenceTransformer
     return SentenceTransformer(EMBEDDING_MODEL)
+
+
+def get_embedding_model() -> SentenceTransformer:
+    # lru_cache alone permits concurrent cache misses to initialize several
+    # heavyweight models when a user uploads multiple PDFs for the first time.
+    with _embedding_model_lock:
+        return _load_embedding_model()
 
 
 def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 150) -> list[str]:

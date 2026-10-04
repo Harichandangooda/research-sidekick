@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from contextlib import closing
+import os
+import logging
+import requests
 from typing import Annotated
 
 from dotenv import load_dotenv
@@ -25,7 +29,8 @@ from backend.schemas.response_models import (
 from backend.services import auth_service, paper_service, report_service, session_service, sidekick_service
 from backend.storage.session_store import init_db
 
-load_dotenv(override=True)
+load_dotenv(override=False)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -34,7 +39,8 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Research Paper Sidekick API", lifespan=lifespan)
+app = FastAPI(title="Research Paper Sidekick API", lifespan=lifespan,
+              root_path=os.getenv("API_ROOT_PATH", ""))
 
 app.add_middleware(
     CORSMiddleware,
@@ -53,6 +59,25 @@ def root():
 
 @app.get("/health", response_model=HealthResponse)
 def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/health/live")
+async def live() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+def ready() -> dict[str, str]:
+    from backend.storage.session_store import get_connection
+    try:
+        with closing(get_connection()) as conn:
+            conn.execute("SELECT 1").fetchone()
+        host = os.getenv("CHROMA_HOST", "localhost")
+        port = int(os.getenv("CHROMA_PORT", "8001"))
+        requests.get(f"http://{host}:{port}/api/v2/heartbeat", timeout=3).raise_for_status()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Dependencies unavailable") from exc
     return {"status": "ok"}
 
 
@@ -127,7 +152,8 @@ def chat(session_id: str, request: ChatRequest, current_user: CurrentUser) -> di
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Sidekick run failed: {exc}") from exc
+        logger.exception("Sidekick run failed: session_id=%s", session_id)
+        raise HTTPException(status_code=500, detail="Sidekick could not complete the request") from exc
 
 
 @app.post("/sessions/{session_id}/papers", response_model=PaperUploadResponse)
@@ -147,7 +173,8 @@ async def upload_paper(session_id: str, current_user: CurrentUser, file: UploadF
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"PDF upload failed: {exc}") from exc
+        logger.exception("PDF upload failed: session_id=%s", session_id)
+        raise HTTPException(status_code=500, detail="PDF upload could not be completed") from exc
     finally:
         await file.close()
 

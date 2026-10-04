@@ -1,6 +1,6 @@
 """Structured discovery using the existing academic search agent and tracing."""
 from agents import Runner
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, TypeAdapter, field_validator
 
 from backend.agents.tools import search_agent
 from backend.storage import session_store
@@ -11,9 +11,15 @@ class DiscoveredPaper(BaseModel):
     authors: str = Field(max_length=2000)
     year: int | None
     summary: str = Field(max_length=10000)
-    url: HttpUrl
+    # HttpUrl emits format="uri", which OpenAI Structured Outputs rejects.
+    url: str
     relevance: float = Field(ge=0, le=1)
     relevance_reason: str = Field(max_length=2000)
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        return str(TypeAdapter(HttpUrl).validate_python(value))
 
 
 class SearchResults(BaseModel):

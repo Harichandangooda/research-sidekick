@@ -10,6 +10,12 @@ The application supports authenticated, user-isolated research sessions. It is
 intended for local development and evaluation and has not yet been hardened for
 public, multi-tenant production deployment.
 
+A minimal four-component Docker/Kubernetes deployment (React/Nginx, FastAPI,
+MySQL and networked ChromaDB) is available using raw YAML or one Helm chart.
+See [deployment instructions](deployment/README.md) for images, Secrets,
+Minikube commands and persistence verification. Local development still uses
+SQLite unless `MYSQL_HOST` is set; Chroma now always runs as a separate server.
+
 ## Features
 
 - React and Bootstrap user interface
@@ -60,6 +66,15 @@ repository for reference, but the React application is the primary frontend.
 The first paper upload can take longer because the
 `sentence-transformers/all-MiniLM-L6-v2` model may need to be downloaded and
 loaded.
+
+Start a local Chroma server before uploading or querying papers:
+
+```powershell
+docker run -d --name research-sidekick-chroma -p 8001:8000 -v research-sidekick-chroma:/data chromadb/chroma:1.5.9
+```
+
+The backend defaults to `CHROMA_HOST=localhost` and `CHROMA_PORT=8001`.
+Existing embedded `chroma_db/` data is not automatically migrated.
 
 ## Backend Setup
 
@@ -266,9 +281,9 @@ before the framework spools uploaded files.
 ## Persistence
 
 - `sidekick.db` contains users, sessions, messages, paper metadata/text, and reports.
-- `chroma_db/` contains persistent paper chunks and embeddings.
+- The Chroma server's `/data` volume contains persistent paper chunks and embeddings.
 
-Both paths are excluded from Git. Deleting a conversation through the application
+Local database files are excluded from Git. Deleting a conversation through the application
 removes its relational records through SQLite cascading relationships and removes
 the corresponding ChromaDB index.
 
@@ -337,5 +352,6 @@ uv lock --check
 - Reports are saved for every successful coordinator response.
 - Paper and report deletion endpoints are not currently available.
 - OpenAI model and web-search usage can incur API charges.
-- Production deployment, rate limiting, structured logging, HTTPS termination,
-  backup automation, and a formal migration workflow are not yet configured.
+- Minimal Docker/Kubernetes/Helm deployment is available; rate limiting,
+  structured logging, HTTPS termination, backup automation and a formal
+  migration workflow remain unconfigured.

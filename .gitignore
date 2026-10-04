@@ -17,3 +17,8 @@ chroma_db/
 
 # Logs
 *.log
+
+# Generated deployment validation and local secret files
+.validation/
+.tools/
+deployment/*.env
